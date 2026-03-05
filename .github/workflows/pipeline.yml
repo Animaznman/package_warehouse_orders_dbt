@@ -18,21 +18,24 @@ jobs:
           pip install databricks-cli dbt-databricks
 
       # - name: Debug
-      #   env:
-      #     DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-      #     DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        # env:
+        #   DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+        #   DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
       #   run: |
       #     echo "Databricks host: $DATABRICKS_HOST"
       #     echo "Databricks token: $DATABRICKS_TOKEN"
         
-      - name: Configure Databricks
-        run: |
-          databricks configure --token <<EOF
-          ${{ secrets.DATABRICKS_HOST }}
-          ${{ secrets.DATABRICKS_TOKEN }}
-          EOF
+      # - name: Configure Databricks
+      #   run: |
+      #     databricks configure --token <<EOF
+      #     ${{ secrets.DATABRICKS_HOST }}
+      #     ${{ secrets.DATABRICKS_TOKEN }}
+      #     EOF
       
       - name: Upload CSV
+      env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
           databricks fs cp data/inventory-2026.csv \
           dbfs:/Volumes/warehouse/default/raw/inventory-2026.csv \
