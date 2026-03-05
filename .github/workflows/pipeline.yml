@@ -17,29 +17,6 @@
 #         run: |
 #           pip install databricks-cli dbt-databricks
 
-#       # - name: Debug
-#         # env:
-#         #   DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-#         #   DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-#       #   run: |
-#       #     echo "Databricks host: $DATABRICKS_HOST"
-#       #     echo "Databricks token: $DATABRICKS_TOKEN"
-        
-#       # - name: Configure Databricks
-#       #   run: |
-#       #     databricks configure --token <<EOF
-#       #     ${{ secrets.DATABRICKS_HOST }}
-#       #     ${{ secrets.DATABRICKS_TOKEN }}
-#       #     EOF
-      
-#       - name: Upload CSV
-#         env:
-#           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-#           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-#         run: |
-#           databricks fs cp data/inventory-2026.csv \
-#           dbfs:/Volumes/warehouse/default/raw/inventory-2026.csv \
-#           --overwrite
 
 name: Databricks Pipeline
 
@@ -52,12 +29,21 @@ jobs:
     runs-on: ubuntu-latest
     environment: DATABRICKS
     steps:
+      # - name: Debug
+      #   env:
+      #     DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      #     DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      #   run: |
+      #     echo "Databricks host: $DATABRICKS_HOST"
+      #     echo "Databricks token: $DATABRICKS_TOKEN"
+
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install Databricks CLI
+      - name: Install Databricks CLI and DBT
         run: |
           curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+          pip install dbt-databricks
 
       - name: Upload CSV
         env:
