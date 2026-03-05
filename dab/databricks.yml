@@ -2,11 +2,11 @@ bundle:
   name: my_pipeline
 
 workspace:
-  host: ${var.databricks_hot}
+  host: https://dbc-283c562e-fc2f.cloud.databricks.com
 
-variables:
-  databricks_host:
-    description: Databricks Workspace URL
+# variables:
+#   databricks_host:
+#     description: Databricks Workspace URL
 
 targets:
   dev:
@@ -16,4 +16,15 @@ targets:
   prod:
     mode: production
     workspace:
-      host: ${var.databricks_host}
+      host: https://dbc-283c562e-fc2f.cloud.databricks.com/
+
+resources:
+  jobs:
+    raw_to_bronze:
+      name: Raw to Bronze
+      tasks:
+      - task_key: raw_to_bronze
+        notebook_task: 
+          notebook_path: ./notebooks/raw_to_bronze.ipynb
+        # base_parameters:
+        #   file_path: /Volumes/warehouse/default/raw/inventory-2026.csv
