@@ -33,7 +33,7 @@ jobs:
       #     EOF
       
       - name: Upload CSV
-      env:
+        env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
