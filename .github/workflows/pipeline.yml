@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
 
-    
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,6 +16,14 @@ jobs:
         run: |
           pip install databricks-cli dbt-databricks
 
+      - name: Debug
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          echo "Databricks host: $DATABRICKS_HOST"
+          echo "Databricks token: $DATABRICKS_TOKEN"
+        
       - name: Configure Databricks
         run: |
           databricks configure --token <<EOF
