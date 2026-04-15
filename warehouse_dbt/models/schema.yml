@@ -1,16 +1,13 @@
-
-version: 2
-sources:
-  - name: bronze_check
+version: 2                                                                                                                      
+sources:                                                                                                                        
+  - name: bronze_check                                                                                                          
     description: "Verify values inside of the bronze0 table are correct."
-    catalog: warehouse
-    schema: bronze
+    catalog: warehouse                      
+    schema: bronze                      
     tables:
-    - name: bronze0
-      columns:
-      - name: ItemHash
-      tests:
-      - not_null:
-        column_name: ItemHash
-      - unique:
-        column_name: ItemHash
+      - name: bronze0                                                                                                           
+        columns:
+          - name: ItemHash                                                                                                      
+            data_tests:
+              - not_null                    
+              - unique 
