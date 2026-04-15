@@ -29,7 +29,7 @@ import random
 import string
 import uuid
 from datetime import date, datetime, timedelta
-from typing import Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 
 # default categories if none provided
@@ -41,6 +41,15 @@ _DEFAULT_CATEGORIES = [
     "Sports",
     "Books",
 ]
+
+default_shorthand = {
+    "Computers&Accessories": "COAC",
+    "Electronics": "ELEC",
+    "HomeGoods": "HOGO",
+    "Clothing": "CLTH",
+    "Sports": "SPRT",
+    "Books": "BOOK"
+}
 
 # canonical field ordering; used for error injection when simulating
 # transposition/column‑shift mistakes.  The order here must match the
@@ -81,13 +90,21 @@ def _random_item_name(category: str) -> str:
     return f"{clean_cat}-{_random_brand_code()}-{random.randint(1,999):03d}"
 
 
-def _random_price() -> float:
-    # realistic price range
-    return round(random.uniform(1.0, 5000.0), 2)
+def _random_price(category: str, distributions: Dict[str, Dict]) -> float:
+    config = distributions.get(category, {"type": "normal", "mean": 100, "std": 25})
+    if config["type"] == "bimodal":
+        center1, center2, std = config["centers"][0], config["centers"][1], config["std"]
+        return round(max(0.01, random.choice([random.gauss(center1, std), random.gauss(center2, std)])), 2)
+    elif config["type"] == "normal":
+        return round(max(0.01, random.gauss(config["mean"], config["std"])), 2)
+    return round(random.uniform(1.0, 5000.0), 2)  # Fallback
 
 
-def _random_sku() -> int:
-    return random.randint(100000, 999999)
+def _random_sku(category: str, warehouse_id: str) -> str:
+    shorthand = default_shorthand.get(category, "UNKN")
+    random_part = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    last4_wh = warehouse_id[-4:]
+    return f"{shorthand}{random_part}{last4_wh}"
 
 
 def _random_quantity() -> int:
@@ -188,11 +205,19 @@ def _possibly_inject_error(
             fmt = "%m-%d-%Y" if random.random() < 0.5 else "%Y/%m/%d"
             return value.strftime(fmt)
         return "notadate"
-    elif column in ("SkuNumber", "OrderId", "Quantity"):
+    elif column in ("OrderId", "Quantity"):
         # return a string or negative
         if isinstance(value, int):
             return str(value)
         return -1
+    elif column == "SkuNumber":
+        # misspell by shuffling letters or dropping characters
+        if isinstance(value, str) and len(value) > 1:
+            lst = list(value)
+            i, j = random.sample(range(len(lst)), 2)
+            lst[i], lst[j] = lst[j], lst[i]
+            return "".join(lst)
+        return ""
     elif column in ("ItemName", "Category", "WarehouseId", "CustomerId"):
         # misspell by shuffling letters or dropping characters
         if isinstance(value, str) and len(value) > 1:
@@ -219,6 +244,8 @@ def generate_warehouse_data(
     error_rate: float = 0.001,
     output_file: Optional[str] = None,
     filename: str = "warehouse_data.csv",
+    num_unique_skus: int = 100,
+    price_distributions: Optional[Dict[str, Dict]] = None,
 ) -> List[dict]:
     """Generate synthetic warehouse inventory/order records.
 
@@ -227,32 +254,29 @@ def generate_warehouse_data(
     num_rows
         Number of rows to produce (default 2000).
     categories
-        Iterable of category strings to sample from.  A sensible default list is
-        used when ``None`` is provided.
+        Iterable of category strings to sample from. A sensible default list is used when None.
     earliest_date
-        Lower bound for order dates.  May be a :class:`datetime.date` or
-        ISO-formatted string (``YYYY-MM-DD``).  Defaults to one year ago from
-        today.
+        Lower bound for order dates. May be a datetime.date or ISO-formatted string (YYYY-MM-DD). Defaults to one year ago.
     latest_date
-        Upper bound for order dates.  Defaults to today.
+        Upper bound for order dates. Defaults to today.
     erroneous
-        If ``True`` randomly introduce errors into the output according to
-        ``error_rate``.  If ``False`` the returned data will be clean.
+        If True, randomly introduce errors according to error_rate. If False, data is clean.
     error_rate
-        Probability that any given cell will be corrupted when ``erroneous``
-        is ``True``.  Default is ``0.001``.
+        Probability of cell corruption when erroneous is True (default 0.001).
     output_file
-        If provided, the generated rows will be written to this path as a CSV
-        file.  The function still returns the list of dictionaries.
+        Path to write CSV. Function still returns the list of dicts.
     filename
-        Base name to use when ``output_file`` is not provided.  Defaults to
-        ``warehouse_data.csv`` and is placed in ``~/data`` unless an alternate
-        directory is specified via ``output_file``.
+        Base name for file when output_file is not provided (default "warehouse_data.csv" in ~/data).
+    num_unique_skus
+        Number of unique SkuNumbers to generate (default 100). More skus = less duplication; fewer = more.
+    price_distributions
+        Dict of category -> distribution config (e.g., {"type": "normal", "mean": 100, "std": 25} or {"type": "bimodal", "centers": [100, 500], "std": 10}).
+        Defaults to your specified spreads.
 
     Returns
     -------
     List[dict]
-        A list containing the generated records.
+        The generated records.
     """
     if erroneous and error_rate <= 0:
         error_rate = 0.001
@@ -261,89 +285,114 @@ def generate_warehouse_data(
 
     cat_list = list(categories) if categories else _DEFAULT_CATEGORIES
 
-    # parse date bounds
+    # Default price distributions
+    default_dists = {
+        "Computers&Accessories": {"type": "bimodal", "centers": [100, 500], "std": 10},
+        "Electronics": {"type": "normal", "mean": 200, "std": 50},
+        "HomeGoods": {"type": "bimodal", "centers": [50, 200], "std": 10},
+        "Clothing": {"type": "normal", "mean": 100, "std": 25},
+        "Sports": {"type": "normal", "mean": 75, "std": 20},
+        "Books": {"type": "normal", "mean": 60, "std": 15},
+    }
+    dists = price_distributions or default_dists
+
+    # Parse dates
     today = date.today()
-    if earliest_date is None:
-        earliest = today - timedelta(days=365)
-    elif isinstance(earliest_date, str):
-        earliest = date.fromisoformat(earliest_date)
-    else:
-        earliest = earliest_date
+    earliest = earliest_date if isinstance(earliest_date, date) else date.fromisoformat(earliest_date or (today - timedelta(days=365)).isoformat())
+    latest = latest_date if isinstance(latest_date, date) else date.fromisoformat(latest_date or today.isoformat())
 
-    if latest_date is None:
-        latest = today
-    elif isinstance(latest_date, str):
-        latest = date.fromisoformat(latest_date)
-    else:
-        latest = latest_date
+    # Generate unique SkuNumbers (each SKU has a fixed name/price/warehouse and a stock count)
+    skus = []
+    for _ in range(min(num_unique_skus, num_rows)):
+        category = random.choice(cat_list)
+        warehouse = _random_warehouse_id()
+        sku = _random_sku(category, warehouse)
+        item_name = _random_item_name(category)
+        price = _random_price(category, dists)
+        stock_quantity = random.randint(1, 20)
+        skus.append(
+            {
+                "sku": sku,
+                "category": category,
+                "warehouse": warehouse,
+                "item_name": item_name,
+                "price": price,
+                "stock_quantity": stock_quantity,
+            }
+        )
 
+    # Distribute rows: ~80% inventory, ~20% sold
+    num_inventory = int(num_rows * 0.8)
+    num_sold = num_rows - num_inventory
     rows: List[dict] = []
     next_order_id = 1000000
 
-    for _ in range(num_rows):
-        sku = _random_sku()
-        category = random.choice(cat_list)
-        sold = random.choice((0, 1))
+    # Generate inventory rows (SoldFlag=0; each unit is a row, but quantity reflects stock)
+    remaining_inventory = num_inventory
+    for sku_info in skus:
+        if remaining_inventory <= 0:
+            break
+        stock_qty = min(sku_info["stock_quantity"], remaining_inventory)
+        sku_info["stock_quantity"] = stock_qty
+        for _ in range(stock_qty):
+            record = {
+                "ItemHash": _random_hash(),
+                "SkuNumber": sku_info["sku"],
+                "SoldFlag": 0,
+                "ItemName": sku_info["item_name"],
+                "Price": sku_info["price"],
+                "WarehouseId": sku_info["warehouse"],
+                "Category": sku_info["category"],
+                "OrderDate": None,
+                "ShipDate": None,
+                "OutDate": None,
+                "Delivery_date": None,
+                "OrderId": None,
+                "Quantity": sku_info["stock_quantity"],
+                "CustomerId": None,
+            }
+            # Inject errors
+            for col in record.keys():
+                record[col] = _possibly_inject_error(record[col], col, error_rate, record, rows, len(rows))
+            rows.append(record)
+        remaining_inventory -= stock_qty
 
-        order_date = None
-        ship_date = None
-        out_date = None
-        delivery_date = None
-        order_id = None
-
-        if sold:
-            order_date = _random_date_between(earliest, latest)
-            ship_date = order_date + timedelta(days=random.randint(0, 7))
-            delivery_date = order_date + _bimodal_delivery_delta()
-            out_date = ship_date + timedelta(days=random.randint(0, 3))
-            order_id = next_order_id
-            next_order_id += 1
-
-        quantity = _random_quantity()
-        customer_id = _random_customer_id() if sold else None
-
+    # Generate sold rows (SoldFlag=1, reuse sku metadata so ItemName/Quantity match inventory)
+    for _ in range(num_sold):
+        sku_info = random.choice(skus)
+        order_date = _random_date_between(earliest, latest)
+        ship_date = order_date + timedelta(days=random.randint(0, 7))
+        delivery_date = order_date + _bimodal_delivery_delta()
+        out_date = ship_date + timedelta(days=random.randint(0, 3))
         record = {
             "ItemHash": _random_hash(),
-            "SkuNumber": sku,
-            "SoldFlag": sold,
-            "ItemName": _random_item_name(category),
-            "Price": _random_price(),
-            "WarehouseId": _random_warehouse_id(),
-            "Category": category,
+            "SkuNumber": sku_info["sku"],
+            "SoldFlag": 1,
+            "ItemName": sku_info["item_name"],
+            "Price": sku_info["price"],
+            "WarehouseId": sku_info["warehouse"],
+            "Category": sku_info["category"],
             "OrderDate": order_date,
             "ShipDate": ship_date,
             "OutDate": out_date,
             "Delivery_date": delivery_date,
-            "OrderId": order_id,
-            "Quantity": quantity,
-            "CustomerId": customer_id,
+            "OrderId": next_order_id,
+            "Quantity": sku_info["stock_quantity"],
+            "CustomerId": _random_customer_id(),
         }
-
-        # inject errors cell-wise; pass the whole record so _possibly_inject_error
-        # can perform column-shift mistakes when appropriate.
-        cols = list(record.keys())
-        # pass current rows and the index we will occupy to support vertical errors
-        current_index = len(rows)
-        for col in cols:
-            record[col] = _possibly_inject_error(
-                record[col],
-                col,
-                error_rate,
-                record,
-                rows,
-                current_index,
-            )
-
+        next_order_id += 1
+        # Inject errors
+        for col in record.keys():
+            record[col] = _possibly_inject_error(record[col], col, error_rate, record, rows, len(rows))
         rows.append(record)
 
-    # determine output path
+    # Write to CSV
     if output_file is None:
         default_dir = os.path.expanduser("./data")
         os.makedirs(default_dir, exist_ok=True)
         output_file = os.path.join(default_dir, filename)
 
     if output_file:
-        # write to CSV, converting dates/datetimes to ISO format strings
         dirpath = os.path.dirname(output_file)
         if dirpath and not os.path.exists(dirpath):
             os.makedirs(dirpath, exist_ok=True)
