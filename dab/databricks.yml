@@ -29,5 +29,7 @@ resources:
         # base_parameters:
         #   file_path: /Volumes/warehouse/default/raw/inventory-2026.csv
       - task_key: bronze_qc
+        depends_on:
+          - task_key: raw_to_bronze
         notebook_task:
-          notebook_path: 
+          notebook_path: ./notebooks/qc_bronze.ipynb
