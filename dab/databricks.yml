@@ -20,11 +20,14 @@ targets:
 
 resources:
   jobs:
-    raw_to_bronze:
-      name: Raw to Bronze
+    ingest_data:
+      name: Ingest Data
       tasks:
       - task_key: raw_to_bronze
         notebook_task: 
           notebook_path: ./notebooks/raw_to_bronze.ipynb
         # base_parameters:
         #   file_path: /Volumes/warehouse/default/raw/inventory-2026.csv
+      - task_key: bronze_qc
+        notebook_task:
+          notebook_path: 
